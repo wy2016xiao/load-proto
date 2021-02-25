@@ -7,6 +7,10 @@ import { load, LoadRes as LoadResponse } from 'load-git'
 
 export { loadFromJson, createPackageDefinition } from './loader';
 
+/**
+ * proto的缓存,只有非字符串依赖配置项才会被缓存
+ * 通常是设置了branch的配置项
+ */
 const CACHE_DIR = `${process.cwd()}/.load-proto-cache`;
 
 interface IProtoDir {
@@ -86,8 +90,8 @@ export interface IGitConfigWithUrl extends IGitConfig {
 }
 
 export interface ILoadResult {
-  parentDir: string;
-  path: string;
+  parentDir: string; // .load-git-cache/1aaf66670947swgiq34gi34b5hg4
+  path: string; // .load-git-cache/1aaf66670947swgiq34gi34b5hg4/git.myscrm.cn/2m/alita-marketing-proto
   rule?: string;
   clean?: boolean;
 }
@@ -107,7 +111,7 @@ export async function loadProto(opt: IOption): Promise<Root> {
     branch,
     accessToken,
     resolvePath,
-    loadProtoPlugin
+    loadProtoPlugin // 通常是load-http
   } = opt;
 
   const loadRes: ILoadResult[] = await Promise.all(gitUrls.map(async (gitUrl) => {
@@ -115,11 +119,14 @@ export async function loadProto(opt: IOption): Promise<Root> {
       if (branch) {
         const options = { url: gitUrl, accessToken, branch }
         if (loadProtoPlugin) {
+          // 通过工具组提供的接口获取git仓库的proto文件
+          // 营销自动化项目直接返回null
           const result: ILoadResult = await loadProtoPlugin(options)
           if (result) {
             return result
           }
         }
+        // 直接用load-git来下载
         return await load(options);
       }
       throw new Error(`git url ${gitUrl} must specified a branch`);
@@ -159,13 +166,22 @@ export async function loadProto(opt: IOption): Promise<Root> {
     }
     throw new Error(`git url ${url} must specified a branch: ${branch1}`);
   }));
+  /**
+   * proto中的文件夹名字
+   */
   const tempDir = `${CACHE_DIR}/${Math.random()}-${Date.now()}`;
 
+  /**
+   * 删掉.load-proto-cache中的缓存
+   */
   const deleteLoadGitCache = (cachedir: string[]) => {
     if (!cachedir || !cachedir.length) return
     cachedir.forEach(async (item: string) => await fsExtra.remove(item))
   }
 
+  /**
+   * .load-proto-cache中的缓存
+   */
   const pluginLoadGitCache: string[] = []
 
   try {
